@@ -1,0 +1,659 @@
+/*  Header Comment
+    Daniela Cruz Falquez & Jack Bailey
+    COP 3223H - 0204
+    11/30/18
+    Labyrinth
+    This program creates a labyrinth program for the user to play.
+ */
+
+//included libraries
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <ctype.h>
+#include <windows.h>
+#include <time.h>
+
+//constants
+#define MAXLEN 24
+
+//structure definitions
+typedef struct{
+    int optimalPath;
+    int maxScore;
+    int startX;
+    int startY;
+    int mstartX;
+    int mstartY;
+    int endX;
+    int endY;
+    int width;
+    int height;
+    int map[MAXLEN][MAXLEN];
+} maze;
+
+typedef struct{
+    int xpos;
+    int ypos;
+} entity;
+
+typedef struct{
+    char name[MAXLEN];
+    int score;
+} score;
+
+//function prototypes
+void readMaze(maze *lab, FILE *ifp, int index);
+void printMaze(maze lab, entity player, entity minotaur, char letter);
+int menu(score *leaderboard);
+int canMove(maze lab, entity ent, char wasd);
+void playerStatus(maze lab, entity *ent, char wasd);
+int adjCheck(entity *minotaur, entity *player);
+void move(entity *ent, char wasd);
+void minotaurMove(maze lab, entity *minotaur);
+int scoreCalculator(score *leaderboard, maze lab);
+void scoreSorter(score leaderboard, FILE *output, int *numScores);
+void viewScores(FILE *output, int *numScores);
+int userCompare(score playerA, score playerB);
+void swap(score * players, int i, int j);
+void sort(score * players, int numPlayers);
+
+//main function
+int main(void) {
+    //data dictionary
+    int results, check = 0, test = 0, numScores;
+    char wasd, letter;
+    maze labs[3]; //There are 3 mazes: easy, medium, & hard.
+    score leaderboard;
+    entity player, minotaur;
+
+    srand(time(NULL));
+
+    FILE *if1 = fopen("labyrinthEasy.txt", "r");
+    FILE *if2 = fopen("labyrinthMedium.txt", "r");
+    FILE *if3 = fopen("labyrinthHard.txt", "r");
+    FILE *ofp = fopen("leaderboard1.txt","r");
+
+    fscanf(ofp, "%d", &numScores);
+
+    //readMaze() takes in lab, file, and the index since we cannot call lab[index] here;
+    readMaze(&labs, if1, 0);
+    readMaze(&labs, if2, 1);
+    readMaze(&labs, if3, 2);
+
+    fclose(if1);
+    fclose(if2);
+    fclose(if3);
+    fclose(ofp);
+
+    //Loops and always takes the user back to the menu after a game(1) or after checking the score(2). They can only exit if they enter 3;
+    while(1){
+        results = menu(&leaderboard);
+        leaderboard.score = 0;
+
+        //Sets the players pawn to the first letter of their name or H for default Hero.
+        if(isalpha(leaderboard.name[0]))
+            letter = toupper(leaderboard.name[0]);
+        else
+            letter = 'H';
+
+       //The different levels of mazes have different data so based on the maze the user chose, the corresponding player information will be set.
+        if(results != 4){
+            player.xpos = labs[results - 1].startX;
+            player.ypos = labs[results - 1].startY;
+            minotaur.xpos = labs[results - 1].mstartX;
+            minotaur.ypos = labs[results - 1].mstartY;
+
+            //Loops until the player wins, loses, or quits mid-game.
+            while(1){
+                printMaze(labs[results - 1], player, minotaur, letter);
+
+                //If the player loses:
+                if(adjCheck(&minotaur, &player)){
+                    system("cls");
+
+                    printMaze(labs[results - 1], player, minotaur, letter);
+
+                    printf("\nOh no! The Minotaur got you! Better luck next time %s!\n", leaderboard.name);
+
+                    leaderboard.score = 0;
+                    printf("\nYour score is %d!\n\n",leaderboard.score);
+
+                    scoreSorter(leaderboard, ofp, &numScores);
+
+                    break;
+                }
+
+                //Loops until the player entered a valid character move.
+                while(1){
+                    printf("\nWhere do you want to move? (WASD) { X to exit back to menu }\n");
+                    scanf(" %c", &wasd);
+
+                    check = canMove(labs[results - 1], player, wasd);
+
+                    //If the move was valid:
+                    if(check == 1){
+                        move(&player, wasd);
+                        leaderboard.score++;
+                        break;
+                    }
+                    //If they moved into a trap's beginning:
+                    else if(check == 2){
+                        playerStatus(labs[results - 1], &player, wasd);
+                        leaderboard.score++;
+                        break;
+                    }
+                    //If they reached the end:
+                    else if(check == 3){
+                        test = 1;
+                        break;
+                    }
+                    //If they quit mid-game.
+                    else if(check == 4){
+                        test = 2;
+                        break;
+                    }
+
+                    else
+                        printf("This was an invalid move, please enter again. (WASD) \n");
+                }
+
+                minotaurMove(labs[results - 1], &minotaur);
+
+                //If the user won: (We are doing this to be able to break out of the outer loop).
+                if(test == 1){
+                    test = 0;
+
+                    system("cls");
+                    printf("Congratulations %s!", leaderboard.name);
+                    printf("\nYou got to the end of the labyrinth and saved the princess!\n");
+
+                    leaderboard.score = scoreCalculator(&leaderboard, labs[results - 1]);
+
+                    printf("\nYour score is %d!\n\n",leaderboard.score);
+
+                    scoreSorter(leaderboard, ofp, &numScores);
+
+                    break;
+                }
+
+                //To exit from within a maze:
+                else if(test == 2){
+                    test = 0;
+                    leaderboard.score = 0;
+                    system("cls");
+                    break;
+                }
+            }
+        }
+
+        //If the user selected to view the scores(2) in the menu.
+        if(results == 4){
+            viewScores(ofp, &numScores);
+        }
+    }
+
+    return 0;
+}
+
+
+//function definitions
+
+//This function scans in the information of the different mazes into a structure.
+//preconditions: There is a valid file to read from, and the maze structure was created properly.
+//postcondition: none
+void readMaze(maze *lab, FILE *ifp, int index){
+    int i, j, num;
+
+    fscanf(ifp, "%d %d %d %d %d %d %d %d %d %d", &lab[index].width, &lab[index].height, &lab[index].optimalPath, &lab[index].maxScore, &lab[index].startX, &lab[index].startY, &lab[index].endX, &lab[index].endY, &lab[index].mstartX, &lab[index].mstartY);
+
+    for(i = 0; i < lab[index].width; i++){
+        for(j = 0; j < lab[index].height; j++){
+            fscanf(ifp, "%d", &num);
+            lab[index].map[i][j] = num;
+        }
+    }
+
+    return;
+}
+
+
+//This function prints out the updated maze after each user move.
+//precondition: The maze structure was created properly.
+//postcondition: none
+void printMaze(maze lab, entity player, entity minotaur, char letter){
+    int i, j;
+
+    system("cls");
+
+    printf("Be careful that you don't fall into a trap and teleport & watch out for the Minotaur!!!\n");
+
+    printf("\n");
+
+    //This is what we need in order to print color to the console.
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
+    WORD saved_attributes;
+    GetConsoleScreenBufferInfo(hConsole, &consoleInfo);
+    saved_attributes = consoleInfo.wAttributes;
+
+    //Marks a 5 for the player and a 7 for the minotaur in the maze.
+    lab.map[player.xpos][player.ypos] = 5;
+    lab.map[minotaur.xpos][minotaur.ypos] = 7;
+
+    for(i = 0; i < lab.width; i++){
+        if(i != lab.startX && j != lab.startY)
+            printf("\t ");
+        else
+            printf("Start -->");
+
+        for(j = 0; j < lab.height; j++){
+            if(lab.map[i][j] == 1 || lab.map[i][j] == 2 || lab.map[i][j] == 3)
+                printf("   ");
+
+            else if(lab.map[i][j] == 0){
+                SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE);
+                printf("%c%c%c",219,219,219);
+                SetConsoleTextAttribute(hConsole, saved_attributes);
+            }
+
+            else if(lab.map[i][j] == 5){
+                SetConsoleTextAttribute(hConsole, FOREGROUND_GREEN);
+                printf(" %c ", letter);
+                SetConsoleTextAttribute(hConsole, saved_attributes);
+            }
+
+            else if(lab.map[i][j] == 7){
+                SetConsoleTextAttribute(hConsole, FOREGROUND_RED);
+                printf(" M ");
+                SetConsoleTextAttribute(hConsole, saved_attributes);
+            }
+
+            if(i == lab.endX && j == lab.endY - 1)
+                printf("<--- END");
+        }
+
+        printf("\n");
+    }
+
+    return;
+}
+
+
+//This function prints the menu and returns an int representing the user's choice.
+//precondition: A valid score structure was passed in the parameters of the function.
+//postcondition: Returns number of user selection.
+int menu(score *leaderboard){
+    int results = 0;
+    char name[MAXLEN];
+
+    //This is what we need in order to print color to the console.
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
+    WORD saved_attributes;
+    GetConsoleScreenBufferInfo(hConsole, &consoleInfo);
+    saved_attributes = consoleInfo.wAttributes;
+
+    while(results != 1 && results != 2 && results != 3){
+        SetConsoleTextAttribute(hConsole, FOREGROUND_RED);
+        printf("\t\tTHE LABYRINTH\n");
+        SetConsoleTextAttribute(hConsole, saved_attributes);
+        printf("Please make a selection from the following:\n");
+        printf("\t1 - Save the Princess\n");
+        printf("\t2 - View Scores\n");
+        printf("\t3 - Quit\n");
+
+        scanf("%d", &results);
+    }
+
+    if(results == 2)
+        return 4;
+
+    else if(results == 3)
+        exit(0);
+
+    else if(results == 1){
+        printf("\nOh No! \nThe princess has been kidnapped by the Minotaur!\n");
+        printf("Thank you for volunteering to save her! \nYou're very brave!\n");
+
+        printf("\nWhat is your name Hero?\n");
+        scanf("%s", leaderboard->name);
+
+        printf("\nYou are ready to embark upon this journey.\nBest of luck %s!\n\n", leaderboard->name);
+
+        results = 0;
+
+        while(results != 1 && results != 2 && results != 3){
+            printf("%s, please make a selection from the following:\n", leaderboard->name);
+            printf("\t1 - Easy Labyrinth\n");
+            printf("\t2 - Medium Labyrinth\n");
+            printf("\t3 - Hard Labyrinth\n");
+
+            scanf("%d", &results);
+        }
+    }
+
+    return results;
+}
+
+
+//This function checks the validity of the move of both the player and minotaur depending on which entity the function was called with.
+//precondition: A character was entered as input by the user or generated by the minotaur.
+//postcondition: Returns either 1,2,3,4 if the input was a valid move or returns 0 if the move was invalid.
+int canMove(maze lab, entity ent, char wasd){
+    char movDir = toupper(wasd);
+
+    //Checks the upper spot to see if it is not a wall, or if it is a trap beginning or trap exit.
+    if(movDir == 'A'){
+        if(lab.map[ent.xpos][ent.ypos - 1] == 1 && ent.ypos - 1 != lab.startY - 1 || lab.map[ent.xpos][ent.ypos - 1] == 3)
+            return 1;
+        else if(lab.map[ent.xpos][ent.ypos - 1] == 2)
+            return 2;
+    }
+
+    //Checks the left spot to see if it is not a wall, or if it is a trap beginning or trap exit.
+    else if(movDir == 'W'){
+        if(lab.map[ent.xpos - 1][ent.ypos] == 1 || lab.map[ent.xpos - 1][ent.ypos] == 3)
+            return 1;
+        else if(lab.map[ent.xpos - 1][ent.ypos] == 2)
+            return 2;
+    }
+
+    //Checks the right spot to see if it is not a wall, or if it is a trap beginning or trap exit, or if that spot marks the end of the maze.
+    else if(movDir == 'D'){
+        if(ent.ypos + 1 == lab.endY && ent.xpos == lab.endX)
+            return 3;
+        else if(lab.map[ent.xpos][ent.ypos + 1] == 1 || lab.map[ent.xpos][ent.ypos + 1] == 3)
+            return 1;
+        else if(lab.map[ent.xpos][ent.ypos + 1] == 2)
+            return 2;
+    }
+
+    //Checks the lower spot to see if it is not a wall, or if it is a trap beginning or trap exit.
+    else if(movDir == 'S'){
+        if(lab.map[ent.xpos + 1][ent.ypos] == 1 || lab.map[ent.xpos + 1][ent.ypos] == 3)
+            return 1;
+        else if(lab.map[ent.xpos + 1][ent.ypos] == 2)
+            return 2;
+    }
+
+    //Checks if the player chose to exit back to menu.
+    else if(movDir == 'X'){
+        return 4;
+    }
+
+    //If the move was invalid:
+    return 0;
+}
+
+
+//This function handles the traps and teleports the player from one of the trap's beginnings to the trap's exit.
+//precondition: The function canMove() had to have returned a 2 so that this function could be called.
+//postcondition: Has no return but teleports the player if they moved into a trap.
+void playerStatus(maze lab, entity *ent, char wasd){
+   char movDir = toupper(wasd);
+   int i, j, x, y;
+
+   //Finds the coordinates of the trap's exit.
+   for(i = 0; i < lab.width; i++){
+        for(j = 0; j < lab.width; j++){
+            if(lab.map[i][j] == 3){
+                x = i;
+                y = j;
+            }
+        }
+   }
+
+   //Teleports the player:
+    if(movDir == 'A' && lab.map[ent->xpos][ent->ypos - 1] == 2){
+        ent->xpos = x;
+        ent->ypos = y;
+    }
+    else if(movDir == 'W' && lab.map[ent->xpos - 1 ][ent->ypos] == 2){
+        ent->xpos = x;
+        ent->ypos = y;
+    }
+    else if(movDir == 'D' && lab.map[ent->xpos][ent->ypos + 1] == 2){
+        ent->xpos = x;
+        ent->ypos = y;
+    }
+    else if(movDir == 'S' && lab.map[ent->xpos + 1][ent->ypos] == 2){
+        ent->xpos = x;
+        ent->ypos = y;
+    }
+
+    return;
+}
+
+
+//This function checks if the minotaur and player are adjacent to each other.
+//precondition: Valid player and minotaur entities were passed in the function's parameters.
+//postcondition: Returns 1 if they are adjacent, 0 if they are not.
+int adjCheck(entity *minotaur, entity *player){
+    if((abs(minotaur->xpos - player->xpos) == 1 && minotaur->ypos == player->ypos) || (abs(minotaur->ypos - player->ypos) == 1 && minotaur->xpos == player->xpos))
+        return 1;
+
+    return 0;
+}
+
+
+//This function moves the player or minotaur, depending on which entity it was called with.
+//precondition: The function canMove() had to have returned a 1 for the player, or a 1 or 2 for the minotaur so that this function could be called.
+//postcondition: No return, but the entity called is moved.
+void move(entity *ent, char wasd){
+    char movDir = toupper(wasd);
+
+    if(movDir == 'A')
+        ent->ypos = ent->ypos - 1;
+
+    else if(movDir == 'W')
+        ent->xpos = ent->xpos - 1;
+
+    else if(movDir == 'D')
+        ent->ypos = ent->ypos + 1;
+
+    else if(movDir == 'S')
+        ent->xpos = ent->xpos + 1;
+
+    return;
+}
+
+
+//This function generates a random movement for the minotaur and then calls canMove() to check and move() to actually move it.
+//precondition: The pseudo-random-number-generator was already seeded.
+//postcondition: none
+void minotaurMove(maze lab, entity *minotaur){
+    char movDir;
+    int result;
+    int randomNum;
+
+    //Loops until canMove() returns a 1 or 2 and the minotaur moves.
+    while(1){
+        randomNum = rand()%4 + 1 ;
+
+        if(randomNum == 1)
+            movDir = 'W';
+
+        else if(randomNum == 2)
+           movDir = 'A';
+
+        else if(randomNum == 3)
+            movDir = 'S';
+
+        else if(randomNum == 4)
+            movDir = 'D';
+
+        result = canMove(lab, *minotaur, movDir);
+
+        if(result == 1 || result == 2){
+            move(minotaur, movDir);
+            break;
+        }
+    }
+    return;
+}
+
+
+//This function calculates the score based on how many moves over the optimal amount of moves the user finished the maze in.
+//precondition: The number of moves is passed it in a valid score structure.
+//postcondition: Returns the score.
+int scoreCalculator(score *leaderboard, maze lab){
+    int numMoves = leaderboard->score;
+    int result;
+
+    if(10*(numMoves - lab.optimalPath) > lab.maxScore)
+        result = 0;
+
+    else
+        result = lab.maxScore - 5*(numMoves - lab.optimalPath);
+
+    return result;
+}
+
+
+//This function outputs the score to a file and sorts it after a new score is added.
+//precondition: The output file was already created.
+//postcondition: Has no return, but the leaderboard file is updated.
+void scoreSorter(score leaderboard, FILE *output, int *numScores){
+    int i, header = 0, highscore;
+    (*numScores)++;
+    score tempGames[*numScores];
+
+    //This saves the current player's information to the first index of the temporary array.
+    tempGames[0].score = leaderboard.score;
+    strcpy(tempGames[0].name, leaderboard.name);
+
+    output = fopen("leaderboard1.txt","r");
+
+    fscanf(output, "%d", &header);
+
+    //This loop stores the information from the file into the temporary array.
+    for(i = 1; i < header + 1; i++){
+        fscanf(output, "%s", tempGames[i].name);
+        fscanf(output, "%d", &tempGames[i].score);
+    }
+
+    sort(tempGames, *numScores);
+    fclose(output);
+
+    //This determines if the current player's score is the new highscore.
+    highscore = tempGames[0].score;
+    for(i = 0; i < *numScores; i++)
+       if(tempGames[i].score > highscore)
+            highscore = tempGames[i].score;
+
+    if(highscore == leaderboard.score && highscore != 0)
+        printf("Congrats %s! You have the new highscore!\n\n", leaderboard.name);
+
+    output = fopen("leaderboard1.txt","w");
+
+    //Prints the new header to the file with the updated amount of players.
+    fprintf(output, "%d\n", *numScores);
+
+    //Writes the newly sorted array into the file.
+    for(i = 0; i < *numScores; i++){
+        fprintf(output, "%s", tempGames[i].name);
+        fprintf(output, "\t\t");
+        fprintf(output, "%d", tempGames[i].score);
+        fprintf(output, "\n");
+    }
+
+     fclose(output);
+
+    return;
+}
+
+
+//This function prints the leaderboard when the player selects to view it in the menu (2).
+//precondition: The output file was already created.
+//postcondition: none
+void viewScores(FILE *output, int *numScores){
+    int header, i;
+    score tempGames[*numScores];
+
+    system("cls");
+
+    output = fopen("leaderboard1.txt","r");
+
+    fscanf(output, "%d", &header);
+    if(header == 0){
+        printf("There are no scores yet!\nYou'll be the first to play!\n\n");
+        fclose(output);
+        return;
+    }
+
+    for(i = 0; i < header; i++){
+        fscanf(output, "%s", tempGames[i].name);
+        fscanf(output, "%d", &tempGames[i].score);
+    }
+
+    //Prints and formats the leaderboard:
+    printf("     Leaderboard\n");
+    printf("Name\t\tScore\n");
+    for(i = 0; i < *numScores; i++){
+        if(strlen(tempGames[i].name) < 8)
+            printf("%s\t\t%d\n", tempGames[i].name, tempGames[i].score);
+        else
+             printf("%s\t%d\n", tempGames[i].name, tempGames[i].score);
+    }
+
+    fclose(output);
+
+    printf("\n");
+
+    return;
+}
+
+
+//This function compares two player's scores.
+//precondition: There are at least 2 players.
+//postcondition: Returns -1, 1, or 0 based on which player's score should come first.
+int userCompare(score playerA, score playerB) {
+    //If playerB has a higher score than playerA:
+    if (playerA.score < playerB.score)
+        return 1;
+
+    //If playerA has a higher score than playerB:
+    else if (playerA.score > playerB.score)
+        return -1;
+
+    //If both player have the same score:
+    else
+        return 0;
+}
+
+
+//This function swaps two players in the array.
+//precondition: A valid score array was passed in the function.
+//postcondition: Has no return but swaps the location of the two players.
+void swap(score * players, int i, int j) {
+    score temp = players[i];
+
+    players[i] = players[j];
+    players[j] = temp;
+
+    return;
+}
+
+
+//This function sorts the array of type score.
+//precondition: The length of the array is defined by numPlayers.
+//postcondition: Has no return but sorts the given array.
+void sort(score * players, int numPlayers) {
+    int done = 0, i;
+
+    while (!done) {
+        done = 1;
+        for(i = 1; i < numPlayers; i++) {
+            if (userCompare(players[i - 1], players[i]) > 0) {
+                swap(players, i - 1, i);
+                done = 0;
+            }
+        }
+    }
+
+    return;
+}
+
+
